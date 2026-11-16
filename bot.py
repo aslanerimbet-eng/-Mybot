@@ -1,106 +1,119 @@
 import logging
 import os
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
     Application,
     CommandHandler,
     MessageHandler,
     ConversationHandler,
+    CallbackQueryHandler,
     filters,
     ContextTypes,
 )
 
-# ═══════════════════════════════════════
-#  НАСТРОЙКИ — ЗАМЕНИ НА СВОИ
-# ═══════════════════════════════════════
-BOT_TOKEN = os.environ.get("BOT_TOKEN")        # Токен от @BotFather
-ADMIN_ID = int(os.environ.get("ADMIN_ID"))                 # Твой Telegram ID (число) — @lapalilpup2088, узнай через @userinfobot
-# ═══════════════════════════════════════
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Состояния диалога
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+ADMIN_ID   = int(os.environ.get("ADMIN_ID"))
+
+CHANNEL_LINK = "https://t.me/claude_buy_sell"
+
 CHOOSE_SERVICE, DESCRIBE_WISH = range(2)
 
 SERVICES = {
-    "🤖 Телеграм бот": "Telegram-бот",
-    "🌐 Свой сайт":    "Сайт",
-    "🎮 Игра (бета)":  "Игра",
-    "🎬 Видео":        "Видео",
+    "🤖 Телеграм бот": {"label": "Telegram-бот", "price": "30–35 ⭐"},
+    "🌐 Свой сайт":    {"label": "Сайт",         "price": "30 ⭐"},
+    "🎮 Игра (бета)":  {"label": "Игра",          "price": "50 ⭐"},
+    "🎬 Видео":        {"label": "Видео",          "price": "15 ⭐"},
 }
 
 MAIN_KEYBOARD = ReplyKeyboardMarkup(
-    [[s] for s in SERVICES.keys()],
+    [
+        ["🤖 Телеграм бот", "🌐 Свой сайт"],
+        ["🎮 Игра (бета)", "🎬 Видео"],
+        ["💬 Отзывы", "📢 Наш канал"],
+    ],
     resize_keyboard=True,
-    one_time_keyboard=True,
 )
 
+REVIEWS = [
+    ("Алибек", "Заказал телеграм бота — всё сделали быстро и качественно! ⭐⭐⭐⭐⭐"),
+    ("Дмитрий", "Сделали сайт за 2 дня, очень доволен результатом! ⭐⭐⭐⭐⭐"),
+    ("Айгерим", "Заказала видео — получилось отлично, рекомендую! ⭐⭐⭐⭐⭐"),
+]
 
-# ── /start ──────────────────────────────────────────────────────────────────
+
 async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text(
         "👋 Привет! Я помогу тебе заказать нужную услугу.\n\n"
-        "Выбери, что хочешь получить:",
+        "💰 <b>Наши цены:</b>\n"
+        "🤖 Телеграм бот — 30–35 ⭐\n"
+        "🌐 Сайт — 30 ⭐\n"
+        "🎮 Игра (бета) — 50 ⭐\n"
+        "🎬 Видео — 15 ⭐\n\n"
+        "Выбери что хочешь заказать:",
+        parse_mode="HTML",
         reply_markup=MAIN_KEYBOARD,
     )
     return CHOOSE_SERVICE
 
 
-# ── Пользователь выбрал услугу ───────────────────────────────────────────────
 async def choose_service(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     text = update.message.text
 
+    # Кнопка Отзывы
+    if text == "💬 Отзывы":
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("💬 Читать отзывы", url="https://t.me/otzivi_claude")]
+        ])
+        await update.message.reply_text(
+            "💬 Здесь отзывы наших клиентов!",
+            reply_markup=keyboard
+        )
+        return CHOOSE_SERVICE
+
+    # Кнопка Канал
+    if text == "📢 Наш канал":
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📢 Перейти в канал", url=CHANNEL_LINK)]
+        ])
+        await update.message.reply_text(
+            "📢 Наш канал — здесь все новости и обновления!",
+            reply_markup=keyboard
+        )
+        return CHOOSE_SERVICE
+
     if text not in SERVICES:
         await update.message.reply_text(
-            "Пожалуйста, выбери один из вариантов на клавиатуре.",
+            "Пожалуйста, выбери один из вариантов.",
             reply_markup=MAIN_KEYBOARD,
         )
         return CHOOSE_SERVICE
 
-    ctx.user_data["service"] = SERVICES[text]
+    service = SERVICES[text]
+    ctx.user_data["service"] = service["label"]
 
     prompts = {
-        "🤖 Телеграм бот": (
-            "🤖 Отлично! Расскажи подробнее:\n\n"
-            "• Что должен делать бот?\n"
-            "• Есть ли особые функции?\n"
-            "• Любые пожелания по дизайну/языку?"
-        ),
-        "🌐 Свой сайт": (
-            "🌐 Круто! Опиши сайт:\n\n"
-            "• Тематика / назначение сайта?\n"
-            "• Сколько страниц нужно?\n"
-            "• Есть примеры, которые нравятся?"
-        ),
-        "🎮 Игра (бета)": (
-            "🎮 Интересно! Расскажи об игре:\n\n"
-            "• Жанр (платформер, головоломка, RPG…)?\n"
-            "• Для какой платформы (ПК, мобилка, браузер)?\n"
-            "• Идея / сюжет?"
-        ),
-        "🎬 Видео": (
-            "🎬 Опиши видео:\n\n"
-            "• Тема / цель видео?\n"
-            "• Формат (анимация, монтаж, обучение)?\n"
-            "• Длина и стиль?"
-        ),
+        "🤖 Телеграм бот": "🤖 Отлично! Цена: <b>30–35 ⭐</b>\n\nРасскажи подробнее:\n• Что должен делать бот?\n• Есть ли особые функции?\n• Пожелания по дизайну?",
+        "🌐 Свой сайт":    "🌐 Цена: <b>30 ⭐</b>\n\nОпиши сайт:\n• Тематика / назначение?\n• Сколько страниц?\n• Есть примеры которые нравятся?",
+        "🎮 Игра (бета)":  "🎮 Цена: <b>50 ⭐</b>\n\nРасскажи об игре:\n• Жанр (платформер, RPG...)?\n• Платформа (ПК, мобилка)?\n• Идея / сюжет?",
+        "🎬 Видео":        "🎬 Цена: <b>15 ⭐</b>\n\nОпиши видео:\n• Тема / цель?\n• Формат (анимация, монтаж)?\n• Длина и стиль?",
     }
 
     await update.message.reply_text(
         prompts[text],
+        parse_mode="HTML",
         reply_markup=ReplyKeyboardRemove(),
     )
     return DESCRIBE_WISH
 
 
-# ── Пользователь описал желание ──────────────────────────────────────────────
 async def describe_wish(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
-    user     = update.effective_user
-    service  = ctx.user_data.get("service", "Не указано")
-    wish     = update.message.text
+    user    = update.effective_user
+    service = ctx.user_data.get("service", "Не указано")
+    wish    = update.message.text
 
-    # Формируем заявку для админа
     order_text = (
         f"📥 <b>Новая заявка!</b>\n\n"
         f"👤 Пользователь: {user.full_name}\n"
@@ -110,56 +123,39 @@ async def describe_wish(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
         f"💬 Пожелание:\n{wish}"
     )
 
-    # Отправляем заявку админу
     try:
-        await ctx.bot.send_message(
-            chat_id=ADMIN_ID,
-            text=order_text,
-            parse_mode="HTML",
-        )
+        await ctx.bot.send_message(chat_id=ADMIN_ID, text=order_text, parse_mode="HTML")
     except Exception as e:
-        logger.error(f"Не удалось отправить заявку админу: {e}")
+        logger.error(f"Ошибка отправки: {e}")
 
-    # Благодарим пользователя
     await update.message.reply_text(
         "✅ Заявка принята! Мы скоро свяжемся с тобой.\n\n"
-        "Хочешь заказать ещё что-то? Нажми /start",
-        reply_markup=ReplyKeyboardRemove(),
+        "Хочешь заказать ещё что-то?",
+        reply_markup=MAIN_KEYBOARD,
     )
-
     ctx.user_data.clear()
-    return ConversationHandler.END
+    return CHOOSE_SERVICE
 
 
-# ── Отмена ───────────────────────────────────────────────────────────────────
 async def cancel(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text(
-        "Отменено. Напиши /start чтобы начать заново.",
-        reply_markup=ReplyKeyboardRemove(),
-    )
+    await update.message.reply_text("Отменено.", reply_markup=MAIN_KEYBOARD)
     ctx.user_data.clear()
-    return ConversationHandler.END
+    return CHOOSE_SERVICE
 
 
-# ── Запуск ───────────────────────────────────────────────────────────────────
 def main() -> None:
     app = Application.builder().token(BOT_TOKEN).build()
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
-            CHOOSE_SERVICE: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, choose_service)
-            ],
-            DESCRIBE_WISH: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, describe_wish)
-            ],
+            CHOOSE_SERVICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_service)],
+            DESCRIBE_WISH:  [MessageHandler(filters.TEXT & ~filters.COMMAND, describe_wish)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )
 
     app.add_handler(conv_handler)
-
     logger.info("Бот запущен...")
     app.run_polling()
 

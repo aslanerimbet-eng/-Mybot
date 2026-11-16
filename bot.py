@@ -1,4 +1,5 @@
 import logging
+import os
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import (
     Application,
@@ -12,8 +13,8 @@ from telegram.ext import (
 # ═══════════════════════════════════════
 #  НАСТРОЙКИ — ЗАМЕНИ НА СВОИ
 # ═══════════════════════════════════════
-BOT_TOKEN = "ВАШ_ТОКЕН_ЗДЕСЬ"        # Токен от @BotFather
-ADMIN_ID   = 123456789                 # Твой Telegram ID (число) — @lapalilpup2088, узнай через @userinfobot
+BOT_TOKEN = os.environ.get("BOT_TOKEN")        # Токен от @BotFather
+ADMIN_ID = int(os.environ.get("ADMIN_ID"))                 # Твой Telegram ID (число) — @lapalilpup2088, узнай через @userinfobot
 # ═══════════════════════════════════════
 
 logging.basicConfig(level=logging.INFO)
